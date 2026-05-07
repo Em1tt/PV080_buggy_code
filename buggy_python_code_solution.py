@@ -2,6 +2,8 @@ import sys
 import os
 import yaml
 import flask
+import socket
+import ipaddress
 
 app = flask.Flask(__name__)
 
@@ -23,15 +25,54 @@ def print_nametag(format_string, person):
     print(format_string.format(person=person))
 
 
+def is_safe_url(target_url):
+    try:
+        from urllib.parse import urlparse
+        parsed = urlparse(target_url)
+        if parsed.scheme not in ("http", "https"):
+            return False
+        if not parsed.hostname:
+            return False
+
+        resolved = socket.getaddrinfo(parsed.hostname, None)
+        for entry in resolved:
+            ip_str = entry[4][0]
+            ip_obj = ipaddress.ip_address(ip_str)
+            if (
+                ip_obj.is_private
+                or ip_obj.is_loopback
+                or ip_obj.is_link_local
+                or ip_obj.is_multicast
+                or ip_obj.is_reserved
+            ):
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def fetch_website(urllib_version, url):
-    # Import the requested version (2 or 3) of urllib
-    exec(f"import urllib{urllib_version} as urllib", globals())
+    # Import the requested version (2 or 3) of urllib safely
+    version = str(urllib_version).strip()
+    if version == "3":
+        import urllib3 as urllib
+    elif version == "2":
+        import urllib2 as urllib
+    else:
+        return "Unsupported urllib version"
+
+    if not is_safe_url(url):
+        return "Blocked unsafe URL"
+
     # Fetch and print the requested URL
- 
-    try: 
-        http = urllib.PoolManager()
-        r = http.request('GET', url)
-    except:
+    try:
+        if version == "3":
+            http = urllib.PoolManager()
+            r = http.request('GET', url)
+            return r.data
+        r = urllib.urlopen(url)
+        return r.read()
+    except Exception:
         print('Exception')
 
 
